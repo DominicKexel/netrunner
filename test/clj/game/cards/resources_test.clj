@@ -3740,6 +3740,33 @@
         (card-ability state :runner nm 0)
         (is (= "Net Mercur" (:title (:card (prompt-map :runner)))) "Net Mercur triggers itself"))))
 
+(deftest net-mercur-with-ghost-runner
+  ;; Net Mercur - Gains 1 credit or draw 1 card when a stealth credit is used
+  (do-game
+    (new-game {:runner {:deck ["Net Mercur" "Ghost Runner"]}})
+    (take-credits state :corp)
+    (core/gain state :runner :click 4 :credit 10)
+    (play-from-hand state :runner "Net Mercur")
+    (play-from-hand state :runner "Ghost Runner")
+    (let [nm (get-resource state 0)
+          gr (get-resource state 1)]
+      (card-ability state :runner nm 0)
+      (is (no-prompt? state :runner) "Net Mercur doesn't stack overflow if you click on it")
+      (card-ability state :runner gr 0)
+      (is (no-prompt? state :runner) "No Net Mercur prompt from stealth spent outside of run")
+      (run-on state :hq)
+      (card-ability state :runner gr 0)
+      (click-prompt state :runner "Place 1 [Credits]")
+      (is (= 1 (get-counters (refresh nm) :credit)) "1 credit placed on Net Mercur")
+      (card-ability state :runner gr 0)
+      (is (no-prompt? state :runner) "No Net Mercur prompt for 2nd stealth in run")
+      (run-jack-out state)
+      (take-credits state :runner)
+      (take-credits state :corp)
+      (run-on state :hq)
+      (card-ability state :runner nm 0)
+      (is (= "Net Mercur" (:title (:card (prompt-map :runner)))) "Net Mercur triggers itself"))))
+
 (deftest net-mercur-pay-credits-prompt
     ;; Pay-credits prompt
     (do-game

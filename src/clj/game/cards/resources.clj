@@ -25,7 +25,7 @@
    [game.core.drawing :refer [draw draw-bonus first-time-draw-bonus]]
    [game.core.effects :refer [register-floating-effect]]
    [game.core.eid :refer [complete-with-result effect-completed make-eid]]
-   [game.core.engine :refer [not-used-once? pay prompt! register-events
+   [game.core.engine :refer [not-used-once? pay prompt! queue-event register-events
                              register-once register-suppress resolve-ability
                              trigger-event trigger-event-sync unregister-events unregister-suppress-by-uuid]]
    [game.core.events :refer [event-count first-event?
@@ -1316,7 +1316,7 @@
                 :async true
                 :effect (req (add-counter state side card :credit -1)
                              (wait-for (gain-credits state side 1)
-                                       (trigger-event-sync state side eid :spent-credits-from-card card)))}]
+                                       (queue-event state :spent-credits-from-card {:card card})))}]
    :events [(trash-on-empty :credit)]
    :interactions {:pay-credits {:req (req run)
                                 :type :credit}}})
@@ -1950,9 +1950,9 @@
                 :req (req (pos? (get-counters (get-card state card) :credit)))
                 :effect (req (add-counter state side card :credit -1)
                              (wait-for (gain-credits state side (make-eid state eid) 1)
-                                       (trigger-event-sync state side eid :spent-credits-from-card card)))}]
+                                       (queue-event state :spent-credits-from-card {:card card })))}]
    :events [{:event :spent-credits-from-card
-             :req (req (and run (has-subtype? target "Stealth")))
+             :req (req (and run (has-subtype? (:card target) "Stealth")))
              :once :per-run
              :waiting-prompt "Runner to choose an option"
              :prompt "Place 1 [Credits] on Net Mercur or draw 1 card?"
@@ -3163,7 +3163,7 @@
 (defcard "The Twinning"
   {:events [{:event :spent-credits-from-card
              :req (req (and
-                         (installed? target)
+                         (installed? (:card target))
                          (first-event? state side :spent-credits-from-card #(installed? (first %)))))
              :async true
              :effect (req (add-counter state :runner card :power 1 {:placed true})

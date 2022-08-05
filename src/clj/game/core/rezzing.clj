@@ -1,7 +1,7 @@
 (ns game.core.rezzing
   (:require
     [clojure.string :as string]
-    [game.core.card :refer [asset? condition-counter? get-card ice? upgrade?]]
+    [game.core.card :refer [asset? condition-counter? get-card ice? upgrade? get-title-key]]
     [game.core.card-defs :refer [card-def]]
     [game.core.cost-fns :refer [rez-additional-cost-bonus rez-cost]]
     [game.core.effects :refer [unregister-constant-effects]]
@@ -67,7 +67,7 @@
                     (when-not no-msg
                       (system-msg state side
                                   (str (build-spend-msg msg "rez" "rezzes")
-                                       (:title card)
+                                       (get-title-key card)
                                        (cond
                                          alternative-cost " by paying its alternative cost"
                                          ignore-cost " at no cost")))
@@ -132,7 +132,7 @@
   "Derez a corp card."
   [state side card]
   (let [card (get-card state card)]
-    (system-msg state side (str "derezzes " (:title card)))
+    (system-msg state side (str "derezzes " (get-title-key card)))
     (unregister-events state side card)
     (update! state :corp (deactivate state :corp card true))
     (let [cdef (card-def card)]

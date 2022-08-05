@@ -73,6 +73,15 @@
   [card]
   (or (:title card) (:printed-title card)))
 
+(defn get-title-key
+  "A string containing the card title or printed title if the card is a counter or fake agenda and the card code that can
+  be parsed in the frontend."
+  [card]
+  (let [title (or (:title card) (:printed-title card))]
+    (if-let [code (:code card)]
+      (str "[Card␟" title "␟" code "]")
+      title)))
+
 (defn get-nested-host
   "Recursively searches upward to find the 'root' card of a hosting chain."
   [card]

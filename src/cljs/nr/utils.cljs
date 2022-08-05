@@ -1,16 +1,16 @@
 (ns nr.utils
   (:require
-   ["@js-joda/locale_en-us" :as js-joda-locale]
-   [cljc.java-time.format.date-time-formatter :as formatter]
-   [cljc.java-time.zoned-date-time :as zdt]
-   [cljc.java-time.zone-id :as zone]
-   [cljc.java-time.instant :as inst]
-   [clojure.string :refer [join] :as s]
-   [goog.object :as gobject]
-   [goog.string :as gstring]
-   [goog.string.format]
-   [nr.appstate :refer [app-state]]
-   [reagent.dom :as rd]))
+    ["@js-joda/locale_en-us" :as js-joda-locale]
+    [cljc.java-time.format.date-time-formatter :as formatter]
+    [cljc.java-time.zoned-date-time :as zdt]
+    [cljc.java-time.zone-id :as zone]
+    [cljc.java-time.instant :as inst]
+    [cljs.reader :refer [read-string]]
+    [clojure.string :refer [join] :as s]
+    [goog.object :as gobject]
+    [goog.string :as gstring]
+    [goog.string.format]
+    [reagent.dom :as rd]))
 
 ;; Dot definitions
 (def zws "\u200B")                  ; zero-width space for wrapping dots
@@ -145,7 +145,7 @@
         escaped-chars (map #(str "\\" %) special-chars)
         regex-escape-smap (zipmap special-chars escaped-chars)]
     (->> string
-         (replace regex-escape-smap)
+         (cljs.core/replace regex-escape-smap)
          (reduce str))))
 
 (def icon-patterns
@@ -190,31 +190,20 @@
       (map (fn [[k v]] [(regex-of k) (span-of v)]))
       (sort-by (comp count str first) >))))
 
-(defn card-patterns-impl
-  "A sequence of card pattern pairs consisting of a regex, used to match a card
-  name in text, and the span fragment that should replace it"
-  []
-  (letfn [(span-of [title] [:span {:class "fake-link" :data-card-title title} title])]
-    (->> (:all-cards-and-flips @app-state)
-         (vals)
-         (remove :replaced_by)
-         (map (fn [c] [(:title c) (span-of (:title c))]))
-         (sort-by (comp count str first) >))))
-
-(def card-patterns (memoize card-patterns-impl))
-
-(defn contains-card-pattern-impl
-  "A card pattern regex, used to match a card name in text to check if the rest
-  of the text should be tested as one pass is far faster than 1500 passes"
-  []
-  (re-pattern
-    (->> (:all-cards-and-flips @app-state)
-         (vals)
-         (filter #(not (:replaced_by %)))
-         (map (fn [k] (regex-escape (:title k))))
-         (join "|"))))
-
-(def contains-card-pattern (memoize contains-card-pattern-impl))
+(def card-transformer
+  "A sequence of functions that transform card name in text to span fragments"
+  (letfn [(transformer [element]
+            (if (string? element)
+              (if-let [[_ title code] (.exec #"\[Card␟([^␟]+)␟(\d+)\]" element)]
+                (let [replacement [:span {:class "fake-link" :data-card-title title :data-card-id code} title]
+                      context (.split element #"\[Card␟(?:[^␟]+)␟(?:\d+)\]")
+                      replacements (repeat replacement)]
+                  (->> (interleave context replacements)
+                       (drop-last)
+                       (filter not-empty)))
+                [element])
+            [element]))]
+    [transformer]))
 
 (def special-patterns
   (letfn [(regex-of [icon-code] (re-pattern (str "(?i)" (regex-escape icon-code))))]
@@ -231,18 +220,18 @@
   interleave always weaves in excess"
   [element [regex replacement]]
   (if (string? element)
-    (let [context (.split element regex)
-          replacements (repeat replacement)]
-      (->> (interleave context replacements)
-           (drop-last)
-           (filter not-empty)))
+      (let [context (.split element regex)
+            replacements (repeat replacement)]
+        (->> (interleave context replacements)
+             (drop-last)
+             (filter not-empty)))
     [element]))
 
 (defn replace-in-fragment
   "Map `replace-in-element` over each element of a fragment, and concatenate
   each returned fragment to flatten the sequence"
-  [fragment substitution]
-  (reduce concat (map #(replace-in-element % substitution) fragment)))
+  [replacer fragment substitution]
+  (reduce concat (map #(replacer % substitution) fragment)))
 
 (defn set-react-key
   "Given a reagent-style HTML element, set the :key attribute of the element"
@@ -256,10 +245,10 @@
   "Run replacements for each [regex replacement] pair in patterns over a
   fragment, and index each HTML element in the return fragment with the :key
   attribute as required by React"
-  [fragment patterns]
+  [fragment patterns replacer]
   (let [counter (atom 0)
         set-next-key (fn [elem] (set-react-key (do (swap! counter inc) @counter) elem))]
-    (->> (reduce replace-in-fragment fragment patterns)
+    (->> (reduce (partial replace-in-fragment replacer) fragment patterns)
          (map #(if (vector? %)
                  (set-next-key %)
                  %))
@@ -269,11 +258,12 @@
 
 (defn render-input
   "Sanitize inputs into fragments before processing them with render-fragment"
-  [input patterns]
-  (if (not (or (string? input) (vector? input)))
-    [:<>]
-    (let [fragment (if (string? input) [:<> input] input)]
-      (render-fragment fragment patterns))))
+  ([input patterns] (render-input input patterns replace-in-element))
+  ([input patterns replacer]
+    (if (not (or (string? input) (vector? input)))
+      [:<>]
+      (let [fragment (if (string? input) [:<> input] input)]
+        (render-fragment fragment patterns replacer)))))
 
 (defn render-icons
   "Render all icons in a given text or HTML fragment input"
@@ -283,12 +273,7 @@
 (defn render-cards
   "Render all cards in a given text or HTML fragment input"
   [input]
-  (cond
-    (re-find (contains-card-pattern) (or input ""))
-    (render-input input (card-patterns))
-    (string? input) [:<> input]
-    (vector? input) input
-    :else [:<>]))
+  (render-input input card-transformer #(%2 %1)))
 
 (defn render-specials
   "Render all special codes in a given text or HTML fragment input"
@@ -299,7 +284,10 @@
   "Render icons, cards and special codes in a message"
   [input]
   (if (string? input)
-    (render-specials (render-icons (render-cards input)))
+    (-> input
+        render-cards
+        render-icons
+        render-specials)
     input))
 
 (defn cond-button

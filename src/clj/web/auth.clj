@@ -1,6 +1,5 @@
 (ns web.auth
   (:require
-   [buddy.sign.jwt :as jwt]
    [cljc.java-time.temporal.chrono-unit :as chrono]
    [cljc.java-time.instant :as inst]
    [clojure.string :as str]
@@ -17,17 +16,6 @@
    [web.versions :refer [banned-msg]])
   (:import
    java.security.SecureRandom))
-
-(defn create-token [{:keys [expiration secret]}
-                    {:keys [_id emailhash]}]
-  (let [claims {:_id _id
-                :emailhash emailhash
-                :exp (inst/plus (inst/now) expiration chrono/days)}]
-    (jwt/sign claims secret {:alg :hs512})))
-
-(defn unsign-token [{:keys [secret]} token]
-  (try (jwt/unsign token secret {:alg :hs512})
-       (catch Exception _ (prn "Received invalid cookie " token))))
 
 (defn wrap-authentication-required [handler]
   (fn [{user :user :as req}]
@@ -49,15 +37,13 @@
 
 (defn wrap-user [handler]
   (fn [{db :system/db
-        auth :system/auth
-        :keys [cookies] :as req}]
-    (let [user (some-> (get cookies "session")
-                       (:value)
-                       (->> (unsign-token auth))
-                       (#(mc/find-one-as-map db "users" {:_id (->object-id (:_id %))
-                                                         :emailhash (:emailhash %)}))
-                       (select-keys user-keys)
-                       (update :_id str))]
+        :keys [session] :as req}]
+    (let [user (some->
+                 (:identity session)
+                 (#(mc/find-one-as-map db "users" {:_id (->object-id (:_id %))
+                                            :emailhash (:emailhash %)}))
+                 (select-keys user-keys)
+                 (update :_id str))]
       (if (active-user? user)
         (handler (-> req
                      (assoc :user user)
@@ -97,8 +83,8 @@
 
 (defn login-handler
   [{db :system/db
-    auth :system/auth
-    {:keys [username password]} :params}]
+    {:keys [username password next]} :params
+    session :session}]
   (let [user (mc/find-one-as-map db "users" {:username username})]
     (cond
       (and user (:banned user)) (response 403 {:error (or @banned-msg "Account Locked")})
@@ -106,15 +92,15 @@
       (do (mc/update db "users"
                      {:username username}
                      {"$set" {:last-connection (inst/now)}})
-          (assoc (response 200 {:message "ok"})
-                 :cookies {"session" (merge {:value (create-token auth user)}
-                                            (:cookie auth))}))
+          (let [session-data (select-keys user [:_id :emailhash])
+                updated-session (assoc session :identity session-data)]
+            (-> (response 200 {:message "ok"})
+                (assoc :session updated-session))))
       :else (response 401 {:error "Invalid login or password"}))))
 
-(defn logout-handler [_]
-  (assoc (response 200 {:message "ok"})
-         :cookies {"session" {:value 0
-                              :max-age -1}}))
+(defn logout-handler [{session :session}]
+  (-> (response 200 {:message "ok"})
+      (assoc :session (dissoc session :identity))))
 
 (defn check-username-handler
   [{db :system/db

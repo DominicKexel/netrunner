@@ -1,5 +1,6 @@
 (ns web.decks
   (:require
+   [ring.util.response :as resp]
    [cljc.java-time.instant :as inst]
    [clojure.string :as str]
    [crypto.password.pbkdf2 :as pbkdf2]
@@ -63,6 +64,34 @@
         salt (make-salt (:name deck))]
     (last (str/split (pbkdf2/encrypt deckstr 100000 "HMAC-SHA1" salt) #"\$"))))
 
+(defn- import-deck-by-id
+  "Downloads a public deck from NRDB by the given id and imports it"
+  [username db input]
+  (let [deck (nrdb/download-public-decklist db input)]
+    (if (every? #(contains? deck %) [:name :identity :cards])
+      (let [db-deck (assoc deck
+                      :_id (->object-id)
+                      :date (inst/now)
+                      :format "standard")
+            updated-deck (update-deck db-deck)
+            status (calculate-deck-status updated-deck)
+            deck-hash (hash-deck updated-deck)
+            deck (prepare-deck-for-db db-deck username status deck-hash)]
+        (mc/insert db "decks" deck)
+        deck))))
+
+(defn decks-import-handler
+  [{db :system/db
+    headers :headers
+    {username :username} :user
+    {deckid :deckid} :path-params}]
+
+  (if-let [referer (get headers "referer")]
+    (if (and username
+          (= referer nrdb/nrdb-base-url)
+          (import-deck-by-id username db deckid))
+      (resp/redirect "/deckbuilder"))))
+
 (defn decks-create-handler
   [{db :system/db
     {username :username} :user
@@ -118,18 +147,8 @@
     uid :uid
     {:keys [input]} :?data}]
   (try
-    (let [deck (nrdb/download-public-decklist db input)]
-      (if (every? #(contains? deck %) [:name :identity :cards])
-        (let [db-deck (assoc deck
-                             :_id (->object-id)
-                             :date (inst/now)
-                             :format "standard")
-              updated-deck (update-deck db-deck)
-              status (calculate-deck-status updated-deck)
-              deck-hash (hash-deck updated-deck)
-              deck (prepare-deck-for-db db-deck username status deck-hash)]
-          (mc/insert db "decks" deck)
-          (ws/broadcast-to! [uid] :decks/import-success "Imported"))
-        (ws/broadcast-to! [uid] :decks/import-failure "Failed to parse imported deck.")))
+    (if (import-deck-by-id username db input)
+      (ws/broadcast-to! [uid] :decks/import-success "Imported")
+      (ws/broadcast-to! [uid] :decks/import-failure "Failed to parse imported deck."))
     (catch Exception _
       (ws/broadcast-to! [uid] :decks/import-failure "Failed to import deck."))))

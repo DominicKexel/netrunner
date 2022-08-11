@@ -1,30 +1,33 @@
 (ns web.api
   (:require
-   [cheshire.generate :refer [add-encoder encode-str]]
-   [puppetlabs.ring-middleware.core :refer [wrap-add-cache-headers]]
-   [reitit.core :as r]
-   [reitit.ring :as ring]
-   [ring.middleware.anti-forgery :refer [wrap-anti-forgery]]
-   [ring.middleware.cors :refer [wrap-cors]]
-   [ring.middleware.content-type :refer [wrap-content-type]]
-   [ring.middleware.json :refer [wrap-json-body wrap-json-response]]
-   [ring.middleware.keyword-params :refer [wrap-keyword-params]]
-   [ring.middleware.params :refer [wrap-params]]
-   [ring.middleware.session :refer [wrap-session]]
-   [ring.middleware.stacktrace :refer [wrap-stacktrace]]
-   [ring.util.response :refer [resource-response]]
-   [reitit.middleware :as middleware]
-   [web.admin :as admin]
-   [web.api-keys :as api-keys]
-   [web.auth :as auth]
-   [web.chat :as chat]
-   [web.data :as data]
-   [web.decks :as decks]
-   [web.game-api :as game-api]
-   [web.pages :as pages]
-   [web.stats :as stats]
-   [web.tournament :as tournament]
-   [web.ws :as ws]))
+    [buddy.auth.backends :as backends]
+    [buddy.auth.middleware :refer [wrap-authentication wrap-authorization]]
+    [cheshire.generate :refer [add-encoder encode-str]]
+    [puppetlabs.ring-middleware.core :refer [wrap-add-cache-headers]]
+    [reitit.core :as r]
+    [reitit.middleware :as middleware]
+    [reitit.ring :as ring]
+    [ring.middleware.session.cookie :refer [cookie-store]]
+    [ring.middleware.session :refer [wrap-session]]
+    [ring.middleware.anti-forgery :refer [wrap-anti-forgery]]
+    [ring.middleware.content-type :refer [wrap-content-type]]
+    [ring.middleware.cors :refer [wrap-cors]]
+    [ring.middleware.json :refer [wrap-json-body wrap-json-response]]
+    [ring.middleware.keyword-params :refer [wrap-keyword-params]]
+    [ring.middleware.params :refer [wrap-params]]
+    [ring.middleware.stacktrace :refer [wrap-stacktrace]]
+    [ring.util.response :refer [resource-response]]
+    [web.admin :as admin]
+    [web.api-keys :as api-keys]
+    [web.auth :as auth]
+    [web.chat :as chat]
+    [web.data :as data]
+    [web.decks :as decks]
+    [web.game-api :as game-api]
+    [web.pages :as pages]
+    [web.stats :as stats]
+    [web.tournament :as tournament]
+    [web.ws :as ws]))
 
 (add-encoder org.bson.types.ObjectId encode-str)
 
@@ -33,6 +36,8 @@
 (defn base-routes []
   (ring/router
     (mapv (fn [path] [(str "/" path) {:get pages/index-page :middleware [wrap-anti-forgery]}]) paths)))
+
+(def backend (backends/session))
 
 (comment
   ((ring/ring-handler (base-routes)) {:request-method :get :uri "/"})
@@ -167,7 +172,9 @@
 
 (defn make-middleware [system]
   {:middleware [wrap-return-favicon
-                wrap-session
+                [wrap-authentication backend]
+                [wrap-authorization backend]
+                [wrap-session {:store (cookie-store {:key (:system/auth system)})}]
                 wrap-content-type
                 ;; Removed to allow reset password flow to work
                 ;; wrap-anti-forgery

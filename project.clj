@@ -20,8 +20,8 @@
                  :init-ns web.dev
                  :init (go)}
 
-  :dependencies [[org.clojure/clojure "1.10.3"]
-                 [org.clojure/clojurescript "1.10.891"
+  :dependencies [[org.clojure/clojure "1.11.1"]
+                 [org.clojure/clojurescript "1.11.60"
                   :exclusions [org.clojure/google-closure-library
                                org.clojure/data.json
                                org.clojure/tools.reader

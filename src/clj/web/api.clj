@@ -1,6 +1,7 @@
 (ns web.api
   (:require
    [cheshire.generate :refer [add-encoder encode-str]]
+   [monger.ring.session-store :only (session-store)]
    [puppetlabs.ring-middleware.core :refer [wrap-add-cache-headers]]
    [reitit.core :as r]
    [reitit.ring :as ring]
@@ -168,7 +169,7 @@
 
 (defn make-middleware [system]
   {:middleware [wrap-return-favicon
-                wrap-session
+                [wrap-session {:store (monger.ring.session-store/session-store (-> system :mongodb/connection :db) "session")}]
                 wrap-content-type
                 ;; Removed to allow reset password flow to work
                 ;; wrap-anti-forgery

@@ -57,6 +57,7 @@
        ["" {:get decks/decks-handler
             :post decks/decks-create-handler
             :put decks/decks-save-handler}]
+        ["/import/:deckid" {:get decks/decks-import-handler}]
        ["/:id" {:delete decks/decks-delete-handler}]]
       ["/api-keys" {:middleware [::auth]}
        ["" {:get api-keys/api-keys-handler

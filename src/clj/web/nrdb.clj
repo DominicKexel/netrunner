@@ -1,13 +1,13 @@
 (ns web.nrdb
   (:require [cheshire.core :as json]
+            [clojure.string :as str]
             [monger.collection :as mc]
             [monger.operators :refer :all]
-            [org.httpkit.client :as http]
-            [clj-uuid :as uuid]
-            [clojure.string :as str]))
+            [org.httpkit.client :as http]))
 
-(def nrdb-decklist-url "https://netrunnerdb.com/api/2.0/public/decklist/")
-(def nrdb-readable-url "https://netrunnerdb.com/en/decklist/")
+(def nrdb-base-url "https://netrunnerdb.com")
+(def nrdb-decklist-url (str nrdb-base-url "/api/2.0/public/decklist/"))
+(def nrdb-readable-url (str nrdb-base-url "/en/decklist/"))
 
 (defn- parse-input
   "Want to handle an NRDB URL or just a deck id number"

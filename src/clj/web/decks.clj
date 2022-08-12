@@ -84,7 +84,7 @@
   [{db :system/db
     headers :headers
     {username :username} :user
-    {:keys [deckid]} :path-params}]
+    {deckid :deckid} :path-params}]
 
   (if-let [referer (get headers "referer")]
     (if (and username
